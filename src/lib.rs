@@ -12,6 +12,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+use tracing::{error, info, trace};
 pub use url::Url;
 
 pub mod backends;
@@ -338,7 +339,13 @@ pub fn read_cargo_config<P: AsRef<Path>>(
     config_path: P,
 ) -> Result<Option<HashMap<String, Registry>>, Error> {
     let config: CargoConfig = {
-        let config_contents = std::fs::read_to_string(config_path)?;
+        let config_contents = match std::fs::read_to_string(config_path) {
+            Ok(s) => s,
+            Err(e) => {
+                info!("failed to read cargo config: {}", e);
+                return Ok(None);
+            }
+        };
         toml::from_str(&config_contents)?
     };
     match config.registries {
@@ -358,7 +365,6 @@ pub fn read_lock_file<P: AsRef<Path>>(
     registries: Option<HashMap<String, Registry>>,
 ) -> Result<(Vec<Krate>, Vec<Canonicalized>), Error> {
     use std::fmt::Write;
-    use tracing::{error, trace};
 
     let mut locks: LockContents = {
         let toml_contents = std::fs::read_to_string(lock_path)?;
