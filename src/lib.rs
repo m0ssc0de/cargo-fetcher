@@ -5,12 +5,12 @@ use crate::util::Canonicalized;
 use anyhow::{Context, Error};
 use serde::{de::Visitor, ser::SerializeStruct, Deserialize, Deserializer, Serialize, Serializer};
 use std::{
-    hash::Hash,
-    hash::Hasher,
     collections::BTreeMap,
     collections::HashMap,
     convert::{From, Into, TryFrom},
     fmt,
+    hash::Hash,
+    hash::Hasher,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -40,7 +40,11 @@ impl Registry {
     // https://github.com/rust-lang/cargo/blob/master/src/cargo/sources/registry/mod.rs#L403-L407 blame f1e26ed3238f933fda177f06e913a70d8929dd6d
     pub fn short_name(&self) -> Result<String, Error> {
         let hash = util::short_hash(self);
-        let ident = Url::parse(&self.index).context(format!("failed parse {} into url::Url", self.index))?.host_str().unwrap_or("").to_string();
+        let ident = Url::parse(&self.index)
+            .context(format!("failed parse {} into url::Url", self.index))?
+            .host_str()
+            .unwrap_or("")
+            .to_string();
         Ok(format!("{}-{}", ident, hash))
     }
 }
@@ -311,7 +315,7 @@ pub struct Ctx {
     pub client: reqwest::Client,
     pub backend: Storage,
     pub krates: Vec<Krate>,
-    pub registries_url: Vec<Canonicalized>,
+    pub registries_url: Vec<Registry>,
     pub root_dir: PathBuf,
 }
 
@@ -320,7 +324,7 @@ impl Ctx {
         root_dir: Option<PathBuf>,
         backend: Storage,
         krates: Vec<Krate>,
-        registries_url: Vec<Canonicalized>,
+        registries_url: Vec<Registry>,
     ) -> Result<Self, Error> {
         Ok(Self {
             client: reqwest::Client::builder().build()?,
@@ -385,7 +389,7 @@ pub fn read_cargo_config(config_path: &Path) -> Result<Option<HashMap<String, Re
 pub fn read_lock_file<P: AsRef<Path>>(
     lock_path: P,
     registries: Option<HashMap<String, Registry>>,
-) -> Result<(Vec<Krate>, Vec<Canonicalized>), Error> {
+) -> Result<(Vec<Krate>, Vec<Registry>), Error> {
     use std::fmt::Write;
 
     let mut locks: LockContents = {
@@ -396,7 +400,7 @@ pub fn read_lock_file<P: AsRef<Path>>(
     let mut lookup = String::with_capacity(128);
     let mut krates = Vec::with_capacity(locks.package.len());
 
-    let mut registries_url_map: HashMap<String, Canonicalized> = HashMap::new();
+    let mut registries_url_map: HashMap<String, Registry> = HashMap::new();
     for p in locks.package {
         let source = match p.source.as_ref() {
             Some(s) => s,
@@ -408,7 +412,13 @@ pub fn read_lock_file<P: AsRef<Path>>(
 
         if source == "registry+https://github.com/rust-lang/crates.io-index" {
             let c = Canonicalized::try_from(&Url::parse(source)?)?;
-            registries_url_map.insert(source.clone(), c);
+            let s = Registry {
+                index: source.clone(),
+                token: None,
+                dl: None,
+                api: None,
+            };
+            registries_url_map.insert(source.clone(), s);
             match p.checksum {
                 Some(chksum) => krates.push(Krate {
                     name: p.name,
@@ -436,7 +446,13 @@ pub fn read_lock_file<P: AsRef<Path>>(
             }
         } else if source.starts_with("registry+") {
             let c = Canonicalized::try_from(&Url::parse(source)?)?;
-            registries_url_map.insert(source.clone(), c);
+            let s = Registry {
+                index: source.clone(),
+                token: None,
+                dl: None,
+                api: None,
+            };
+            registries_url_map.insert(source.clone(), s);
             let regs = registries.clone().context(format!(
                 "failed to find the registry {} in cargo config file",
                 source

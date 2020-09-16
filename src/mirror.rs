@@ -1,5 +1,5 @@
 use crate::util::Canonicalized;
-use crate::{fetch, util, Ctx, Krate, Source};
+use crate::{fetch, util, Ctx, Krate, Registry, Source};
 use anyhow::Context;
 use anyhow::Error;
 use futures::StreamExt;
@@ -11,19 +11,19 @@ use tracing_futures::Instrument;
 pub async fn registries_index(
     backend: crate::Storage,
     max_stale: Duration,
-    registries_url: Vec<Canonicalized>,
+    registries_url: Vec<Registry>,
 ) -> Result<usize, Error> {
     let bytes = futures::stream::iter(registries_url)
         .map(|url| {
             let backend = backend.clone();
             let u = url.clone();
             async move {
-                let res: Result<usize, Error> = registry_index(backend, max_stale, Some(url))
+                let res: Result<usize, Error> = registry_index(backend, max_stale, url)
                     .instrument(tracing::debug_span!("upload registry"))
                     .await;
                 res
             }
-            .instrument(tracing::debug_span!("mirror registry", %u))
+            .instrument(tracing::debug_span!("mirror registry", %u.index))
         })
         .buffer_unordered(32);
     let total_bytes = bytes
@@ -43,11 +43,13 @@ pub async fn registries_index(
 pub async fn registry_index(
     backend: crate::Storage,
     max_stale: Duration,
-    registry_url: Option<Canonicalized>,
+    registry_url: Registry,
 ) -> Result<usize, Error> {
-    let (canonicalized, ident) = util::decode_registry_url(registry_url)?;
+    // let (canonicalized, ident) = util::decode_registry_url(registry_url)?;
+    let url = url::Url::parse(&registry_url.index)?;
+    let ident = registry_url.short_name()?;
 
-    let url: url::Url = canonicalized.into();
+    // let url: url::Url = canonicalized.into();
     let url4index = url.clone();
     let path = Path::new(url.path());
     let name = if path.ends_with(".git") {

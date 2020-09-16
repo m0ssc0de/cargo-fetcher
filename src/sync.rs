@@ -1,5 +1,5 @@
 use crate::util::Canonicalized;
-use crate::{util, Krate, Source};
+use crate::{util, Krate, Registry, Source};
 use anyhow::{Context, Error};
 use futures::StreamExt;
 use std::convert::TryFrom;
@@ -20,14 +20,14 @@ pub const GIT_CO_DIR: &str = "git/checkouts";
 pub async fn registries_index(
     root_dir: PathBuf,
     backend: crate::Storage,
-    registries_url: Vec<Canonicalized>,
+    registries_url: Vec<Registry>,
 ) -> Result<(), Error> {
     let resu = futures::stream::iter(registries_url)
         .map(|url| {
             let root_dir = root_dir.clone();
             let backend = backend.clone();
             async move {
-                let res: Result<(), Error> = registry_index(root_dir, backend, Some(url))
+                let res: Result<(), Error> = registry_index(root_dir, backend, url)
                     .instrument(tracing::debug_span!("download registry"))
                     .await;
                 res
@@ -52,9 +52,10 @@ pub async fn registries_index(
 pub async fn registry_index(
     root_dir: PathBuf,
     backend: crate::Storage,
-    registry_url: Option<Canonicalized>,
+    registry_url: Registry,
 ) -> Result<(), Error> {
-    let (canonicalized, ident) = util::decode_registry_url(registry_url)?;
+    // let (canonicalized, ident) = util::decode_registry_url(registry_url)?;
+    let ident = registry_url.short_name()?;
 
     let index_path = root_dir.join(INDEX_PATH).join(ident.clone());
     std::fs::create_dir_all(&index_path).context("failed to create index dir")?;
@@ -86,7 +87,8 @@ pub async fn registry_index(
         }
     }
 
-    let url: url::Url = canonicalized.into();
+    // let url: url::Url = canonicalized.into();
+    let url = url::Url::parse(&registry_url.index)?;
     let path = Path::new(url.path());
     let name = if path.ends_with(".git") {
         path.file_stem().context("failed to get registry name")?
@@ -318,7 +320,8 @@ pub async fn crates(ctx: &crate::Ctx) -> Result<Summary, Error> {
     let git_co_dir = root_dir.join(GIT_CO_DIR);
 
     for url in ctx.registries_url.iter() {
-        let (_, ident) = util::decode_registry_url(Some(url.clone()))?;
+        // let (_, ident) = util::decode_registry_url(Some(url.clone()))?;
+        let ident = url.short_name()?;
         let cache_dir = root_dir.join(CACHE_PATH).join(ident.clone());
         let src_dir = root_dir.join(SRC_PATH).join(ident.clone());
         std::fs::create_dir_all(&cache_dir).context("failed to create registry/cache/")?;

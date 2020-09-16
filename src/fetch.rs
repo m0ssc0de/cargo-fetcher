@@ -173,6 +173,8 @@ pub async fn update_bare(krate: &Krate, path: &Path) -> Result<(), Error> {
 }
 
 pub async fn registry(url: &url::Url) -> Result<Bytes, Error> {
+    println!("---> url {:?}", url);
+    let url = url::Url::parse("https://github.com/m0ssc0de/crates.io-index")?;
     // See https://github.com/rust-lang/cargo/blob/0e38712d4d7b346747bf91fb26cce8df6934e178/src/cargo/sources/registry/remote.rs#L61
     // for why we go through the whole repo init process + fetch instead of just a bare clone
     let temp_dir = tempfile::tempdir()?;
