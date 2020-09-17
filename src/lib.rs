@@ -165,7 +165,6 @@ impl<'de> Deserialize<'de> for UrlWrapper {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub enum Source {
     Registry(Registry, String),
-    CratesIo(String),
     Git {
         url: UrlWrapper,
         rev: String,
@@ -207,7 +206,6 @@ impl Source {
 
     pub(crate) fn is_git(&self) -> bool {
         match self {
-            Source::CratesIo(_) => false,
             Source::Registry(_, _) => false,
             _ => true,
         }
@@ -252,9 +250,8 @@ impl Krate {
 impl fmt::Display for Krate {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let typ = match &self.source {
-            Source::CratesIo(_) => "crates.io",
             Source::Git { .. } => "git",
-            Source::Registry(..) => "alternate registry",
+            Source::Registry(..) => "registry",
         };
 
         write!(f, "{}-{}({})", self.name, self.version, typ)
@@ -268,7 +265,6 @@ pub struct LocalId<'a> {
 impl<'a> fmt::Display for LocalId<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.inner.source {
-            Source::CratesIo(_) => write!(f, "{}-{}.crate", self.inner.name, self.inner.version),
             Source::Git { ident, .. } => write!(f, "{}", &ident),
             // TODO: havn't make sure
             Source::Registry(_, _) => write!(f, "{}-{}.crate", self.inner.name, self.inner.version),
@@ -283,7 +279,6 @@ pub struct CloudId<'a> {
 impl<'a> fmt::Display for CloudId<'a> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.inner.source {
-            Source::CratesIo(chksum) => write!(f, "{}", chksum),
             Source::Git { ident, rev, .. } => write!(f, "{}-{}", ident, rev),
             // TODO: havn't make sure
             Source::Registry(_, chksum) => write!(f, "{}", chksum),
@@ -423,20 +418,21 @@ pub fn read_lock_file<P: AsRef<Path>>(
         };
 
         if source == "registry+https://github.com/rust-lang/crates.io-index" {
-            registries_to_sync.push(Registry {
-                index: source
+            let registry = Registry::new(
+                source
                     .strip_prefix("registry+")
                     .unwrap_or("https://github.com/rust-lang/crates.io-index")
                     .to_owned(),
-                token: None,
-                dl: None,
-                api: None,
-            });
+                None,
+                Some("https://crates.io/api/v1/crates".to_owned()),
+                None,
+            );
+            registries_to_sync.push(registry.clone());
             match p.checksum {
                 Some(chksum) => krates.push(Krate {
                     name: p.name,
                     version: p.version,
-                    source: Source::CratesIo(chksum),
+                    source: Source::Registry(registry, chksum),
                 }),
                 None => {
                     write!(
@@ -450,7 +446,7 @@ pub fn read_lock_file<P: AsRef<Path>>(
                         krates.push(Krate {
                             name: p.name,
                             version: p.version,
-                            source: Source::CratesIo(chksum),
+                            source: Source::Registry(registry, chksum),
                         })
                     }
 
